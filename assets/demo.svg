@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="943" height="959" viewBox="0 0 943 959" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14">
+<rect width="943" height="959" rx="10" fill="#0d1117"/>
+<circle cx="22" cy="20" r="6" fill="#ff5f56"/><circle cx="42" cy="20" r="6" fill="#ffbd2e"/><circle cx="62" cy="20" r="6" fill="#27c93f"/>
+<text x="18" y="58" xml:space="preserve">
+<tspan fill="#e6edf3">$ rem dream</tspan>
+</text>
+<text x="18" y="77" xml:space="preserve">
+<tspan fill="#e6edf3">memory: 3 files, health 82/100, 2 issue(s)</tspan>
+</text>
+<text x="18" y="96" xml:space="preserve">
+<tspan fill="#e6edf3">sessions: 2 to review (0.0 MB of transcript -&gt; 2 KB digest)</tspan>
+</text>
+<text x="18" y="115" xml:space="preserve">
+<tspan fill="#e6edf3">analyzing sessions…</tspan>
+</text>
+<text x="18" y="134" xml:space="preserve">
+<tspan fill="#e6edf3">  8/8 findings verified against transcripts</tspan>
+</text>
+<text x="18" y="153" xml:space="preserve">
+<tspan fill="#e6edf3">reviewing 1 flagged memory file(s)…</tspan>
+</text>
+<text x="18" y="172" xml:space="preserve">
+<tspan fill="#e6edf3">consolidating…</tspan>
+</text>
+<text x="18" y="191" xml:space="preserve">
+<tspan fill="#e6edf3">second read…</tspan>
+</text>
+<text x="18" y="210" xml:space="preserve">
+</text>
+<text x="18" y="229" xml:space="preserve">
+<tspan fill="#e6edf3" font-weight="700">dream 20261110-184228</tspan>
+<tspan fill="#e6edf3">  ~/code/shop</tspan>
+</text>
+<text x="18" y="248" xml:space="preserve">
+<tspan fill="#e6edf3">The memory is small. The British English rule was recorded but ignored in two separate sessions, so I propos</tspan>
+</text>
+<text x="18" y="267" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">e adding it to CLAUDE.md and widening the memory to cover emails. I also propose a new memory for the &quot;n</tspan>
+</text>
+<text x="18" y="286" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">ever mock the database in integration tests&quot; rule. The npm→pnpm test-command correction is left to the s</tspan>
+</text>
+<text x="18" y="305" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">eparate review of project-test-command.md.</tspan>
+</text>
+<text x="18" y="324" xml:space="preserve">
+</text>
+<text x="18" y="343" xml:space="preserve">
+<tspan fill="#79c0ff" font-weight="700">op1</tspan>
+<tspan fill="#e6edf3">  </tspan>
+<tspan fill="#e6edf3" font-weight="700">FIX</tspan>
+<tspan fill="#e6edf3">  Update test command to pnpm test:unit  </tspan>
+<tspan fill="#7ee787">[high]</tspan>
+</text>
+<text x="18" y="362" xml:space="preserve">
+<tspan fill="#e6edf3">  package.json has only test:unit (no `test`) and packageManager pnpm; the user confirmed npm test is gone.</tspan>
+</text>
+<text x="18" y="381" xml:space="preserve">
+<tspan fill="#8b949e">  evidence </tspan>
+<tspan fill="#e6edf3">user said, 2026-11-08 `62b9d918`: “we moved to pnpm two months ago. the suite is `pnpm test:unit`</tspan>
+</text>
+<text x="18" y="400" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">, npm test is gone for good”</tspan>
+</text>
+<text x="18" y="419" xml:space="preserve">
+</text>
+<text x="18" y="438" xml:space="preserve">
+<tspan fill="#79c0ff" font-weight="700">op2</tspan>
+<tspan fill="#e6edf3">  </tspan>
+<tspan fill="#e6edf3" font-weight="700">PROMOTE → CLAUDE.md</tspan>
+<tspan fill="#e6edf3">  Enforce British English in all customer copy via CLAUDE.md  </tspan>
+<tspan fill="#e3b341">[medium]</tspan>
+</text>
+<text x="18" y="457" xml:space="preserve">
+<tspan fill="#e6edf3">  The user corrected US spelling in two separate sessions (2026-11-08, 2026-11-09) despite the memory. CLAUD</tspan>
+</text>
+<text x="18" y="476" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">E.md is loaded in full each session. The memory is widened to name emails and cover the spellings the us</tspan>
+</text>
+<text x="18" y="495" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">er corrected.</tspan>
+</text>
+<text x="18" y="514" xml:space="preserve">
+<tspan fill="#e3b341">  note: trimmed by the second reader: The rule is justified: the user corrected US spelling in two sessions </tspan>
+</text>
+<text x="18" y="533" xml:space="preserve">
+<tspan fill="#e3b341">    </tspan>
+<tspan fill="#e3b341">and said they keep having to say it. But &#x27;in several sessions&#x27; in the CLAUDE.md line overstates two sess</tspan>
+</text>
+<text x="18" y="552" xml:space="preserve">
+<tspan fill="#e3b341">    </tspan>
+<tspan fill="#e3b341">ions, so I changed it to &#x27;repeatedly&#x27;. The memory file is fine.</tspan>
+</text>
+<text x="18" y="571" xml:space="preserve">
+<tspan fill="#8b949e">  evidence </tspan>
+<tspan fill="#e6edf3">user said, 2026-11-08 `62b9d918`: “british spelling please: favourite, colour. this has come up b</tspan>
+</text>
+<text x="18" y="590" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3">efore”</tspan>
+</text>
+<text x="18" y="609" xml:space="preserve">
+</text>
+<text x="18" y="628" xml:space="preserve">
+<tspan fill="#79c0ff" font-weight="700">op3</tspan>
+<tspan fill="#e6edf3">  </tspan>
+<tspan fill="#e6edf3" font-weight="700">NEW</tspan>
+<tspan fill="#e6edf3">  Never mock the database in integration tests  </tspan>
+<tspan fill="#e3b341">[medium]</tspan>
+</text>
+<text x="18" y="647" xml:space="preserve">
+<tspan fill="#e6edf3">  Explicit user rule with a production-incident reason, not covered by memory or CLAUDE.md.</tspan>
+</text>
+<text x="18" y="666" xml:space="preserve">
+<tspan fill="#8b949e">  evidence </tspan>
+<tspan fill="#e6edf3">user said, 2026-11-09 `33a18a19`: “no. never mock the database in integration tests. last quarter</tspan>
+</text>
+<text x="18" y="685" xml:space="preserve">
+<tspan fill="#e6edf3">    </tspan>
+<tspan fill="#e6edf3"> the mocked tests passed and a real migration broke prod”</tspan>
+</text>
+<text x="18" y="704" xml:space="preserve">
+</text>
+<text x="18" y="723" xml:space="preserve">
+<tspan fill="#79c0ff" font-weight="700">op4</tspan>
+<tspan fill="#e6edf3">  </tspan>
+<tspan fill="#e6edf3" font-weight="700">REINDEX</tspan>
+<tspan fill="#e6edf3">  Drop index entry for missing file project-deploy-notes.md  </tspan>
+<tspan fill="#7ee787">[high]</tspan>
+</text>
+<text x="18" y="742" xml:space="preserve">
+<tspan fill="#e6edf3">  MEMORY.md lists this file but it does not exist, so the line only costs attention.</tspan>
+</text>
+<text x="18" y="761" xml:space="preserve">
+</text>
+<text x="18" y="780" xml:space="preserve">
+<tspan fill="#79c0ff" font-weight="700">op5</tspan>
+<tspan fill="#e6edf3">  </tspan>
+<tspan fill="#e6edf3" font-weight="700">REINDEX</tspan>
+<tspan fill="#e6edf3">  Add reference-ci.md to the index  </tspan>
+<tspan fill="#7ee787">[high]</tspan>
+</text>
+<text x="18" y="799" xml:space="preserve">
+<tspan fill="#e6edf3">  The file exists but MEMORY.md does not list it, so no session can find it.</tspan>
+</text>
+<text x="18" y="818" xml:space="preserve">
+</text>
+<text x="18" y="837" xml:space="preserve">
+<tspan fill="#8b949e">considered and left out: 2 (rem review shows why)</tspan>
+</text>
+<text x="18" y="856" xml:space="preserve">
+</text>
+<text x="18" y="875" xml:space="preserve">
+<tspan fill="#e6edf3" font-weight="700">5 change(s) waiting: 1 fix, 1 promote_rule, 1 new, 2 reindex</tspan>
+</text>
+<text x="18" y="894" xml:space="preserve">
+<tspan fill="#e6edf3">apply all: rem apply    some: rem apply op1 op3    none: rem discard</tspan>
+</text>
+<text x="18" y="913" xml:space="preserve">
+</text>
+<text x="18" y="932" xml:space="preserve">
+<tspan fill="#e6edf3">4 model calls, $0.1368 at API prices, 57.0s.</tspan>
+</text>
+</svg>

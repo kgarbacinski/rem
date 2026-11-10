@@ -1,0 +1,9 @@
+{
+  "name": "rem",
+  "description": "Sleep for your coding agent. Reviews past sessions overnight and proposes memory fixes as a diff you approve: every change backed by a quote a program verified, nothing applied without you, everything reversible.",
+  "author": { "name": "Kacper Garbaciński", "url": "https://github.com/kgarbacinski" },
+  "homepage": "https://github.com/kgarbacinski/rem",
+  "repository": "https://github.com/kgarbacinski/rem",
+  "license": "MIT",
+  "keywords": ["memory", "dreaming", "consolidation", "claude-code", "auto-memory"]
+}

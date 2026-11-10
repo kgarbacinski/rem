@@ -1,0 +1,11 @@
+{
+  "name": "rem",
+  "owner": { "name": "Kacper Garbaciński" },
+  "plugins": [
+    {
+      "name": "rem",
+      "source": "./",
+      "description": "Reviewable, evidence-backed memory consolidation (dreaming) for Claude Code."
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+$ rem dream
+memory: 3 files, health 82/100, 2 issue(s)
+sessions: 2 to review (0.0 MB of transcript -> 2 KB digest)
+analyzing sessions…
+  8/8 findings verified against transcripts
+reviewing 1 flagged memory file(s)…
+consolidating…
+second read…
+
+dream 20261110-184228  ~/code/shop
+The memory is small. The British English rule was recorded but ignored in two separate sessions, so I propose adding it to CLAUDE.md and widening the memory to cover emails. I also propose a new memory for the "never mock the database in integration tests" rule. The npm→pnpm test-command correction is left to the separate review of project-test-command.md.
+
+op1  FIX  Update test command to pnpm test:unit  [high]
+  package.json has only test:unit (no `test`) and packageManager pnpm; the user confirmed npm test is gone.
+  evidence user said, 2026-11-08 `62b9d918`: “we moved to pnpm two months ago. the suite is `pnpm test:unit`, npm test is gone for good”
+
+op2  PROMOTE → CLAUDE.md  Enforce British English in all customer copy via CLAUDE.md  [medium]
+  The user corrected US spelling in two separate sessions (2026-11-08, 2026-11-09) despite the memory. CLAUDE.md is loaded in full each session. The memory is widened to name emails and cover the spellings the user corrected.
+  note: trimmed by the second reader: The rule is justified: the user corrected US spelling in two sessions and said they keep having to say it. But 'in several sessions' in the CLAUDE.md line overstates two sessions, so I changed it to 'repeatedly'. The memory file is fine.
+  evidence user said, 2026-11-08 `62b9d918`: “british spelling please: favourite, colour. this has come up before”
+
+op3  NEW  Never mock the database in integration tests  [medium]
+  Explicit user rule with a production-incident reason, not covered by memory or CLAUDE.md.
+  evidence user said, 2026-11-09 `33a18a19`: “no. never mock the database in integration tests. last quarter the mocked tests passed and a real migration broke prod”
+
+op4  REINDEX  Drop index entry for missing file project-deploy-notes.md  [high]
+  MEMORY.md lists this file but it does not exist, so the line only costs attention.
+
+op5  REINDEX  Add reference-ci.md to the index  [high]
+  The file exists but MEMORY.md does not list it, so no session can find it.
+
+considered and left out: 2 (rem review shows why)
+
+5 change(s) waiting: 1 fix, 1 promote_rule, 1 new, 2 reindex
+apply all: rem apply    some: rem apply op1 op3    none: rem discard
+
+4 model calls, $0.1368 at API prices, 57.0s.
