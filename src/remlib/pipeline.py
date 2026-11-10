@@ -10,7 +10,7 @@ from . import llm
 from . import memory as mem
 from . import proposal as pp
 from .digest import find_quote, normalize
-from .paths import sha
+from .paths import sha, sha_bytes
 
 PROMPTS = Path(__file__).resolve().parents[2] / "prompts"
 BATCH_CHARS = 60_000
@@ -192,11 +192,16 @@ def audit_targets(memory_files, scan, findings, state, limit):
             partner = issue["detail"].rsplit(" with ", 1)[-1]
             if partner in memory_files:
                 entry["partner"] = partner
+    for finding in findings:
+        for lesson in finding.get("lessons", []):
+            name = lesson.get("covered_by")
+            if isinstance(name, str) and name in memory_files and name not in reasons:
+                reasons[name] = {"checks": [], "issues": [], "partner": None, "rank": 5, "by_lesson": True}
     done = state.get("file_audits", {})
     targets = []
     for name, entry in reasons.items():
-        signature = sha(memory_files[name]["text"] + "|" + "|".join(sorted(entry["issues"])))
-        if not entry["checks"] and done.get(name) == signature:
+        signature = sha(memory_files[name]["text"] + "|" + "|".join(sorted({i.split(":")[0] for i in entry["issues"]})))
+        if not entry["checks"] and not entry.get("by_lesson") and done.get(name) == signature:
             continue  # already looked at this exact file for these exact reasons
         lessons = [dict(lesson, session=f["session"], session_dates=f.get("session_dates", ""))
                    for f in findings for lesson in f.get("lessons", [])
@@ -344,17 +349,17 @@ def analyze(metas, digests, memory_files, usage, log, workers=4):
         for sess in result.get("sessions") or []:
             if not isinstance(sess, dict):
                 continue
-            sid = sess.get("session") or ""
-            text = digests.get(sid)
+            sid = sess.get("session")
+            text = digests.get(sid) if isinstance(sid, str) else None
             if not text:
                 continue
             kept = by_session.setdefault(sid, {"session": sid, "memory_checks": [], "lessons": []})
             for field in ("memory_checks", "lessons"):
-                for item in sess.get(field) or []:
+                for item in (sess.get(field) if isinstance(sess.get(field), list) else []):
                     stats["items"] += 1
                     if not isinstance(item, dict):
                         continue
-                    if field == "memory_checks" and item.get("file") not in memory_files:
+                    if field == "memory_checks" and not (isinstance(item.get("file"), str) and item["file"] in memory_files):
                         continue
                     hit = find_quote(str(item.get("quote") or ""), text) if isinstance(item, dict) else None
                     if hit:
@@ -400,23 +405,6 @@ def synthesize(project, memory_files, scan, findings, metas, usage, instructions
                     usage=usage, tools=tools, cwd=project.cwd if project.cwd.is_dir() else None, timeout=1500)
 
 
-def unaddressed_checks(findings, proposal):
-    """Checks that say a memory is wrong, which the consolidation neither acted on nor explained."""
-    touched = {c.get("path") for op in proposal.get("ops") or [] if isinstance(op, dict)
-               for c in op.get("changes") or [] if isinstance(c, dict)}
-    explained = " ".join(f"{item.get('what', '')} {item.get('reason', '')}"
-                         for item in proposal.get("left_out") or [] if isinstance(item, dict))
-    missed = []
-    for finding in findings:
-        for check in finding.get("memory_checks", []):
-            name = check.get("file", "")
-            if check.get("verdict") in ("contradicted", "outdated", "ignored") \
-                    and name not in touched and name not in explained and name[:-3] not in explained:
-                missed.append({"session": finding["session"], "session_dates": finding.get("session_dates", ""),
-                               "memory_checks": [check], "lessons": []})
-    return missed
-
-
 def _context(quote: str, digest_text: str, radius=5) -> str:
     lines = digest_text.splitlines()
     needle = normalize(quote)[:60]
@@ -452,7 +440,7 @@ def second_read(proposal, memory_files, digests, usage, log, project=None):
                 block.append(f'<evidence repository_file="{ev["file"]}" confirmed_by_program="{ev.get("checked")}">\n{claim}\n</evidence>')
                 continue
             ctx = _context(ev["quote"], digests.get(ev["session"], ""))
-            block.append(f'<evidence session="{ev["session"]}" said_by="{ev.get("role")}">\nquote: {ev["quote"]}\n<context>\n{ctx}\n</context>\n</evidence>')
+            block.append(f'<evidence session="{ev["session"]}" said_by="{ev.get("role")}" said_on="{ev.get("day", "")}">\nquote: {ev["quote"]}\n<context>\n{ctx}\n</context>\n</evidence>')
         block.append("</operation>")
         blocks.append("\n".join(block))
     try:
@@ -462,8 +450,16 @@ def second_read(proposal, memory_files, digests, usage, log, project=None):
     except llm.LLMError as err:
         log(f"  second read failed, proposal left unreviewed: {err}")
         proposal["second_read"] = "failed"
+        for op in ops:
+            op["confidence"] = "low"
+            op["notes"].append("the second reader did not run, so this was not independently checked")
         return
-    by_id = {v.get("id"): v for v in result.get("verdicts") or []}
+    verdicts = result.get("verdicts") if isinstance(result.get("verdicts"), list) else []
+    by_id = {}
+    for v in verdicts:
+        if isinstance(v, dict) and isinstance(v.get("id"), str) and v.get("verdict") in ("approve", "revise", "downgrade", "reject"):
+            v["reason"] = " ".join(pp.clean_text(str(v.get("reason") or "")).split())[:500]
+            by_id[v["id"]] = v
     for op in ops:
         verdict = by_id.get(op["id"])
         if not verdict:
@@ -499,12 +495,16 @@ def dream(project, days=14, max_sessions=20, skeptic=True, instructions="", log=
     run = project.new_run()
     scan = mem.scan(project.memory_dir, project.cwd)
     memory_files = mem.load(project.memory_dir)["files"]
+    # What the files looked like when the dream read them; an apply refuses anything changed since.
+    base = {str(p): sha_bytes(p) for p in project.memory_dir.glob("*.md")} if project.memory_dir.is_dir() else {}
+    base[str(pp.claude_md_path(project.cwd))] = sha_bytes(pp.claude_md_path(project.cwd))
+    replaced = state.get("pending_run")
     log(f"memory: {scan['files']} files, health {scan['score']}/100, {len(scan['issues'])} issue(s)")
 
     if sessions is None:
-        if state.get("last_session_mtime"):
+        if project.seen_mtime():
             # Work through the backlog oldest first, so nothing is skipped for good.
-            sessions = dg.list_sessions(project.transcripts_dir, since_ts=state["last_session_mtime"])[:max_sessions]
+            sessions = dg.list_sessions(project.transcripts_dir, since_ts=project.seen_mtime())[:max_sessions]
         else:
             # First dream: the most recent sessions are the ones worth the money.
             sessions = dg.list_sessions(project.transcripts_dir, since_ts=time.time() - days * 86400)[-max_sessions:]
@@ -570,7 +570,7 @@ def dream(project, days=14, max_sessions=20, skeptic=True, instructions="", log=
     if deferred:
         proposal["left_out"].append({"what": f"{deferred} more flagged memory file(s)",
                                      "reason": "not reviewed this time (review limit); the next dream picks them up"})
-    proposal = pp.validate(proposal, project.memory_dir, project.cwd, digests)
+    proposal = pp.validate(proposal, project.memory_dir, project.cwd, digests, base)
     proposal["left_out"] = [
         {"what": pp.clean_text(str(i.get("what", "")))[:300], "reason": pp.clean_text(str(i.get("reason", "")))[:400]}
         for i in proposal.get("left_out") or [] if isinstance(i, dict)]
@@ -586,12 +586,28 @@ def dream(project, days=14, max_sessions=20, skeptic=True, instructions="", log=
         proposal["ops"].append(repair)
     proposal["index_forecast"] = pp.forecast_index(proposal, project.memory_dir)
 
+    # The record of what happened is computed here, not taken from a model's summary.
+    live = [op for op in proposal["ops"] if op["status"] == "proposed"]
+    touched = {c["path"]: op["kind"] for op in live for c in op["changes"] if c.get("target") == "memory"}
+    notes = {r["file"]: r["note"] for r in proposal.get("file_reviews", [])}
+    proposal["file_reviews"] = [{"file": name, "verdict": touched.get(name, "keep"), "note": notes.get(name, "")}
+                                for name in memory_files]
+    proposal["left_out"] = [item for item in proposal["left_out"]
+                            if not any(name in item["what"] or name[:-3] in item["what"] for name in touched)]
+    if audit_ops:
+        kinds = pp.counts(proposal)
+        counted = ", ".join(f"{n} {k}" for k, n in kinds.items()) or "no changes"
+        proposal["summary"] = (f"Proposed: {counted}. Flagged memory files were each checked against the project. "
+                               f"From recent sessions: {proposal['summary']}").strip()
+    if replaced and live:
+        proposal["summary"] += f" (This replaces the earlier unreviewed proposal {replaced}.)"
+
     proposal["meta"] = {
         "run": run.name,
         "project": str(project.cwd),
         "memory_dir": str(project.memory_dir),
         "created": time.strftime("%Y-%m-%d %H:%M"),
-        "sessions": [{k: m[k] for k in ("session", "date", "title")} for m in metas],
+        "sessions": [{k: m.get(k, "") for k in ("session", "date", "end", "title")} for m in metas],
         "scan_score": scan["score"],
         "scan_issues": len(scan["issues"]),
         "analysis": stats,
@@ -610,7 +626,7 @@ def dream(project, days=14, max_sessions=20, skeptic=True, instructions="", log=
     if not proposal.get("failed"):
         # Sessions count as reviewed only when their analysis actually ran.
         if sessions and not analysis_failed:
-            state["last_session_mtime"] = max(os.path.getmtime(p) for p in sessions)
+            state.setdefault("seen", {})[str(project.transcripts_dir)] = max(os.path.getmtime(p) for p in sessions)
         state["last_dream"] = time.strftime("%Y-%m-%d %H:%M")
         if not analysis_failed:
             state["audited_memory_sha"] = memory_sha

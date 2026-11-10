@@ -13,7 +13,7 @@ from pathlib import Path
 from . import memory as mem
 from .digest import find_quote, normalize
 from .paths import sha_bytes
-from .redact import MARK, new_secrets
+from .redact import MARK, find_secrets, new_secrets, redact
 
 KINDS = ("fix", "merge", "prune", "new", "reindex", "promote_rule", "promote_skill")
 MEMORY_TYPES = ("user", "feedback", "project", "reference")
@@ -106,9 +106,8 @@ def _normal_entry(entry: str, name: str, content: str) -> str:
     links = mem.index_links(entry)
     if not links or mem.link_name(links[0][1]) != name:
         return default_index_entry(name, content) if content else ""
-    title = links[0][0]
-    hook = entry.split(")", 1)[1].lstrip(" —–-:") if ")" in entry else ""
-    return make_entry(title, name, hook)
+    match = mem._LINK.search(entry)
+    return make_entry(links[0][0], name, entry[match.end():].lstrip(" —–-:"))
 
 
 def check_repo_evidence(project_dir: Path, rel: str, quote: str) -> str:
@@ -197,8 +196,9 @@ def _check_change(change, memory_files, memory_dir, project_dir, known_text):
             return "CLAUDE.md can only be appended to"
         if not content.strip() or len(content) > RULE_MAX:
             return f"a promoted rule must be 1 to {RULE_MAX} characters"
-        if content.lstrip().startswith(("#", "---")):
-            return "a promoted rule is plain sentences, not a heading or frontmatter"
+        rule_lines = [ln for ln in content.strip().splitlines() if ln.strip()]
+        if len(rule_lines) > 4 or any(ln.lstrip().startswith(("#", "---", "```")) for ln in rule_lines):
+            return "a promoted rule is a few plain sentences, not headings, frontmatter or code"
         target_path = claude_md_path(project_dir)
         if not _confined(target_path, project_dir):
             return "CLAUDE.md is a link or leads outside the project"
@@ -244,8 +244,17 @@ def revise_change(op: dict, path: str, content: str, memory_dir: Path, project_d
     change = targets[0]
     if not isinstance(content, str) or not content.strip():
         return "empty revision"
-    if len(content) > len(change["content"]) * 1.15 + 80:
+    # A revision may only delete: same frontmatter, and every sentence already in the original.
+    old = change["content"]
+    old_body, new_body = mem.parse_frontmatter(old)[1], mem.parse_frontmatter(content)[1]
+    if old[:len(old) - len(old_body)].strip() != content[:len(content) - len(new_body)].strip():
+        return "a revision may not change the frontmatter"
+    if len(content) > len(old):
         return "a revision may trim, not expand"
+    original = normalize(old_body)
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", new_body):
+        if normalize(sentence).strip("*_ ") and normalize(sentence) not in original:
+            return "a revision may only remove sentences, not reword them"
     memory_files = mem.load(memory_dir)["files"]
     known = "\n".join(info["text"] for info in memory_files.values())
     trial = dict(change, content=content)
@@ -263,7 +272,7 @@ def _check_evidence(op, digests, project_dir, memory_dir):
         if not isinstance(ev, dict):
             dropped += 1
             continue
-        quote = clean_text(str(ev.get("quote") or "")).strip()
+        quote = " ".join(clean_text(str(ev.get("quote") or "")).split())
         session, file = str(ev.get("session") or "").strip(), str(ev.get("file") or "").strip()
         if file.startswith("memory:"):
             # "this memory, which another one links to, does not exist"
@@ -275,6 +284,8 @@ def _check_evidence(op, digests, project_dir, memory_dir):
             continue
         if file:
             verdict = check_repo_evidence(project_dir, file, quote)
+            if verdict and find_secrets(quote):
+                verdict = ""  # never show a credential from the repository as evidence
             if verdict:
                 good.append({"session": "", "file": file, "quote": quote, "checked": verdict, "role": "REPO"})
             else:
@@ -293,7 +304,17 @@ def _evidence_problem(kind, good, changes, memory_files):
     """Each kind has its own bar for what counts as enough evidence."""
     session_ev = [e for e in good if e["session"]]
     repo_quotes = [e for e in good if e["file"] and e["checked"] == "in file"]
-    repo_absent = [e for e in good if e["file"] and e["checked"] in ("path is absent", "memory is absent")]
+    # "It no longer exists" only counts when the memory being changed actually mentions it.
+    current = "\n".join(memory_files.get(c.get("path"), {}).get("text", "")
+                        for c in changes if c.get("target") == "memory")
+
+    def mentioned(e):
+        name = e["file"]
+        needle = f"[[{name[7:-3]}]]" if name.startswith("memory:") else name.strip("/")
+        return bool(needle) and needle in current
+
+    repo_absent = [e for e in good if e["file"] and e["checked"] in ("path is absent", "memory is absent")
+                   and mentioned(e)]
     if kind == "new":
         if not session_ev:
             return "a new memory needs a quote from a session transcript"
@@ -312,7 +333,7 @@ def _evidence_problem(kind, good, changes, memory_files):
     return None
 
 
-def validate(proposal: dict, memory_dir: Path, project_dir: Path, digests: dict) -> dict:
+def validate(proposal: dict, memory_dir: Path, project_dir: Path, digests: dict, base: dict = None) -> dict:
     """Annotate every operation with an id, a status and file hashes. Mutates and returns."""
     memory_files = mem.load(memory_dir)["files"]
     known_text = "\n".join(info["text"] for info in memory_files.values())
@@ -325,13 +346,17 @@ def validate(proposal: dict, memory_dir: Path, project_dir: Path, digests: dict)
         op["status"] = "proposed"
         op["notes"] = []
         for field in ("title", "rationale"):
-            op[field] = clean_text(str(op.get(field) or ""))[:600]
+            op[field] = redact(" ".join(clean_text(str(op.get(field) or "")).split()))[:600]
         if op.get("confidence") not in ("high", "medium", "low"):
             op["confidence"] = "low"
         problems = []
         kind = op.get("kind")
         changes = op.get("changes") if isinstance(op.get("changes"), list) else []
         changes = [c for c in changes if isinstance(c, dict)]
+        for c in changes:
+            for key in ("target", "action"):
+                if not isinstance(c.get(key), str):
+                    c[key] = ""
         op["changes"] = changes
         if kind not in KINDS:
             problems.append(f"unknown kind `{kind}`")
@@ -363,7 +388,8 @@ def validate(proposal: dict, memory_dir: Path, project_dir: Path, digests: dict)
                 key = file_key(path)
                 if key in touched:
                     problems.append(f"touches {path.name}, which {touched[key]} already changes")
-                change["base_sha"] = sha_bytes(path)
+                # Compare against what the dream read, not what is on disk minutes later.
+                change["base_sha"] = base[str(path)] if base and str(path) in base else sha_bytes(path)
                 change["_key"] = key
             keys = [c.get("_key") for c in changes if c.get("_key")]
             if len(keys) != len(set(keys)):
@@ -377,6 +403,10 @@ def validate(proposal: dict, memory_dir: Path, project_dir: Path, digests: dict)
                 problems.append("`fix` must rewrite an existing memory file; use `new` for a new one")
             if kind == "merge" and len(writes) != 1:
                 problems.append("a merge writes exactly one file and deletes the others")
+            if kind == "merge":
+                existing = {c["path"] for c in changes if c["target"] == "memory" and c["path"] in memory_files}
+                if len(existing) < 2:
+                    problems.append("a merge must combine at least two existing memory files")
             problem = _evidence_problem(kind, good, changes, memory_files)
             if problem:
                 problems.append(problem)
@@ -398,12 +428,16 @@ def validate(proposal: dict, memory_dir: Path, project_dir: Path, digests: dict)
 
 def apply_index_changes(index_text: str, changes) -> str:
     """Replace, add or remove index lines. A line belongs to a file when the first
-    link on it points at that file; a mention elsewhere on a line is left alone."""
+    link on it points at that file; a mention elsewhere on a line is left alone.
+    Every other line keeps its exact bytes, including its line ending."""
     newline = "\r\n" if "\r\n" in index_text else "\n"
-    lines = index_text.splitlines()
+    raw = re.findall(r"[^\n]*\n|[^\n]+", index_text)
+
+    def body(line):
+        return line.rstrip("\r\n")
 
     def owner(line):
-        links = mem.index_links(line)
+        links = mem.index_links(body(line))
         return mem.link_name(links[0][1]) if links else None
 
     for change in changes:
@@ -411,19 +445,24 @@ def apply_index_changes(index_text: str, changes) -> str:
             continue
         name = change["path"]
         if change["action"] in ("delete", "unindex"):
-            lines = [ln for ln in lines if owner(ln) != name]
+            raw = [ln for ln in raw if owner(ln) != name]
             continue
         entry = change.get("index_entry")
         if not entry:
             continue
-        hits = [i for i, ln in enumerate(lines) if owner(ln) == name]
+        hits = [i for i, ln in enumerate(raw) if owner(ln) == name]
         if hits:
-            lines[hits[0]] = entry
+            raw[hits[0]] = entry + (raw[hits[0]][len(body(raw[hits[0]])):] or newline)
             for extra in reversed(hits[1:]):
-                del lines[extra]
+                del raw[extra]
         else:
-            lines.append(entry)
-    return newline.join(lines).rstrip("\r\n") + newline if lines else ""
+            if raw and raw[-1] == body(raw[-1]):
+                raw[-1] += newline
+            at = len(raw)
+            while at > 0 and not body(raw[at - 1]).strip():
+                at -= 1
+            raw.insert(at, entry + newline)
+    return "".join(raw)
 
 
 def index_line_diff(index_text: str, change) -> list:

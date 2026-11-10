@@ -18,6 +18,8 @@ _TOKENS = [
     re.compile(r"\bglpat-[A-Za-z0-9_\-]{16,}"),
     re.compile(r"\bnpm_[A-Za-z0-9]{30,}"),
     re.compile(r"\bhf_[A-Za-z0-9]{30,}"),
+    re.compile(r"\b(?:gsk|shpat|shpss)_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bSG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}"),
     re.compile(r"\bwhsec_[A-Za-z0-9]{20,}"),
     re.compile(r"\bya29\.[A-Za-z0-9_\-]{20,}"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9\-]{10,}"),
@@ -29,10 +31,13 @@ _TOKENS = [
 ]
 # Secrets that sit inside a larger construct: keep the construct, mask the secret.
 _EMBEDDED = [
-    (re.compile(r"(?i)\b(Bearer|Basic)(\s+)([A-Za-z0-9_\-\.=+/]{16,})"), 3),
-    (re.compile(r"\b([a-z][a-z0-9+.\-]{1,20}://[^\s:/@]{1,64}:)([^\s@/]{3,128})(@)"), 2),
-    (re.compile(r"(\s-u\s+[^\s:]{1,64}:)([^\s]{3,128})"), 2),
-    (re.compile(r"(\bmysql\b[^\n]{0,80}?\s-p)([^\s]{4,})"), 2),
+    (re.compile(r"(?i)(Authorization['\"]?\s*[:=]\s*['\"]?(?:Bearer|Basic)\s+)([A-Za-z0-9_\-\.=+/]{8,})"), 2),
+    (re.compile(r"\b(Bearer\s+)(?=[A-Za-z_\-\.=+/]*\d)([A-Za-z0-9_\-\.=+/]{20,})"), 2),
+    (re.compile(r"\b([a-z][a-z0-9+.\-]{1,20}://[^\s:/@]{0,64}:)([^\s@]{3,128})(@)"), 2),
+    (re.compile(r"(\bcurl\b[^\n]{0,300}?\s(?:-u|--user)[\s=]+['\"]?[^\s:'\"]{1,64}:)([^\s'\"]{3,128})"), 2),
+    (re.compile(r"(\b(?:mysql|mysqldump)\b[^\n]{0,80}?\s-p)(?!ort|rotocol|ipe)([^\s=]{4,})"), 2),
+    (re.compile(r"(\b(?:sshpass|docker login)\b[^\n]{0,120}?\s-p\s+['\"]?)([^\s'\"]{4,128})"), 2),
+    (re.compile(r"(\s--password[\s=]+['\"]?)([^\s'\"]{4,128})"), 2),
 ]
 
 _PASSWORD_WORDS = r"password|passwd|passphrase|pwd|has[łl]o"
@@ -51,8 +56,26 @@ _PLAIN_WORDS = {"undefined", "none", "null", "true", "false", "required", "optio
                 "changeme", "example", "redacted", "hidden", "unknown", "empty", "missing"}
 
 
-def _looks_secret(value: str, password_key: bool) -> bool:
+def _switches(value: str) -> int:
+    """How often the character class changes: random tokens switch a lot, names do not."""
+    def kind(ch):
+        return "d" if ch.isdigit() else "u" if ch.isupper() else "l" if ch.islower() else ""
+    kinds = [kind(ch) for ch in value if kind(ch)]
+    return sum(1 for a, b in zip(kinds, kinds[1:]) if a != b)
+
+
+def _looks_secret(value: str, password_key: bool, env_style: bool = False) -> bool:
     value = value.strip("`*_()[]{}<>.")
+    if password_key and env_style and len(value) >= 4 and MARK.strip("[]") not in value \
+            and value.lower() not in _PLAIN_WORDS and not value.startswith(("$", "<", "{")) \
+            and not _CODE_VALUE.match(value) and "(" not in value:
+        return True  # PGPASSWORD=whatever: in an assignment, any value is the password
+    if not password_key:
+        # A token-like key (auth, secret, _KEY...) is common in prose and config, so the
+        # value itself has to look random, not like a name, a file or a constant.
+        return (len(value) >= 8 and MARK.strip("[]") not in value and "(" not in value
+                and not value.startswith(("$", "<", "{", "~", "/", "./", "http"))
+                and not _CODE_VALUE.match(value) and _switches(value) >= 3)
     if len(value) < (6 if password_key else 8) or MARK.strip("[]") in value:
         return False
     if value.lower() in _PLAIN_WORDS or value.startswith(("$", "<", "{", "~", "/", "./", "http")):
@@ -93,7 +116,7 @@ def find_secrets(text: str) -> set:
     for pat, group in _EMBEDDED:
         found.update(m.group(group) for m in pat.finditer(text))
     for m in _ASSIGN.finditer(text):
-        if _looks_secret(m.group(5), bool(_PASSWORD_KEY.search(m.group(2)))):
+        if _looks_secret(m.group(5), bool(_PASSWORD_KEY.search(m.group(2))), m.group(3) == "="):
             found.add(m.group(5))
     for m in _AFTER_EMAIL.finditer(text):
         if _after_email(m):
@@ -110,7 +133,7 @@ def redact(text: str) -> str:
         text = pat.sub(lambda m, g=group: m.group(0).replace(m.group(g), MARK, 1), text)
 
     def assign(m):
-        if _looks_secret(m.group(5), bool(_PASSWORD_KEY.search(m.group(2)))):
+        if _looks_secret(m.group(5), bool(_PASSWORD_KEY.search(m.group(2))), m.group(3) == "="):
             return m.group(0)[: m.start(5) - m.start(0)] + MARK
         return m.group(0)
 

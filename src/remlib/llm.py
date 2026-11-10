@@ -60,7 +60,13 @@ def call(stage, system, prompt, schema, usage=None, tools=None, cwd=None, timeou
         out = subprocess.run(mock, shell=True, input=payload, capture_output=True, text=True, timeout=timeout)
         if out.returncode != 0:
             raise LLMError(f"mock backend failed: {out.stderr[:400]}")
-        return json.loads(out.stdout)
+        try:
+            data = json.loads(out.stdout)
+        except ValueError:
+            raise LLMError(f"{stage}: unreadable output")
+        if not isinstance(data, dict):
+            raise LLMError(f"{stage}: the model returned {type(data).__name__}, not an object")
+        return data
 
     binary = os.environ.get("REM_CLAUDE_BIN") or shutil.which("claude")
     if not binary:
@@ -103,4 +109,6 @@ def call(stage, system, prompt, schema, usage=None, tools=None, cwd=None, timeou
             data = json.loads(result.get("result") or "")
         except ValueError:
             raise LLMError(f"{stage}: the model returned no structured output")
+    if not isinstance(data, dict):
+        raise LLMError(f"{stage}: the model returned {type(data).__name__}, not an object")
     return data

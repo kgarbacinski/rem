@@ -29,7 +29,15 @@ def _load_pending(project):
         project.save_state(state)
         print(f"rem: the waiting proposal in {run} is unreadable and was set aside. Run: rem dream", file=sys.stderr)
         return None, None
-    proposal.setdefault("meta", {})
+    proposal["ops"] = [op for op in proposal["ops"] if isinstance(op, dict) and isinstance(op.get("changes"), list)
+                       and all(isinstance(op.get(k), str) for k in ("id", "status", "kind"))]
+    meta = proposal.setdefault("meta", {})
+    if not isinstance(meta, dict) or (meta.get("memory_dir") and meta["memory_dir"] != str(project.memory_dir)):
+        print("rem: the waiting proposal belongs to a different memory directory; ignoring it.", file=sys.stderr)
+        return None, None
+    # Files are changed where the dream looked, whatever folder this command runs in.
+    if meta.get("project") and Path(meta["project"]).is_dir():
+        project.cwd = Path(meta["project"])
     return run, proposal
 
 
@@ -37,8 +45,7 @@ def cmd_status(args):
     project = _project(args)
     scan = mem.scan(project.memory_dir, project.cwd)
     state = project.load_state()
-    since = state.get("last_session_mtime") or 0
-    new = dg.list_sessions(project.transcripts_dir, since_ts=since)
+    new = dg.list_sessions(project.transcripts_dir, since_ts=project.seen_mtime())
     if args.json:
         print(json.dumps({**scan, "sessions_since_last_dream": len(new), "last_dream": state.get("last_dream")}, indent=2))
         return 0
@@ -60,7 +67,7 @@ def cmd_dream(args):
     with Lock(project):
         if args.fresh:
             state = project.load_state()
-            for key in ("last_session_mtime", "audited_memory_sha", "audited_at", "file_audits"):
+            for key in ("seen", "audited_memory_sha", "audited_at", "file_audits"):
                 state.pop(key, None)
             project.save_state(state)
         run, proposal = pipeline.dream(
@@ -74,6 +81,9 @@ def cmd_dream(args):
         usage = proposal["meta"]["usage"]
         print(f"\n{usage['calls']} model calls, ${usage['cost_usd']} at API prices, {proposal['meta']['wall_seconds']}s. "
               f"Report: {run / 'report.md'}")
+    if proposal.get("failed"):
+        print(f"rem: the dream did not finish: {proposal.get('summary', '')}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -109,7 +119,7 @@ def cmd_apply(args):
         chosen = ap.select(proposal, only=only, min_confidence=args.min_confidence)
         if not chosen:
             print("Nothing matched. Operations that were filtered out cannot be applied.")
-            return 0
+            return 1 if only else 0
         result = ap.apply_ops(project, run, proposal, chosen)
     if result.get("error"):
         print(f"rem: apply stopped early: {result['error']}", file=sys.stderr)
@@ -167,6 +177,20 @@ def cmd_rollback(args):
         print("Use --force to restore them anyway.")
         return 1
     print(f"Restored {len(result['restored'])} file(s) to their state before snapshot {result['snapshot']}.")
+    # The undone operations wait for review again.
+    run = project.runs_dir() / str(result.get("run"))
+    try:
+        proposal = json.loads((run / "proposal.json").read_text(encoding="utf-8"))
+        for op in proposal["ops"]:
+            if op.get("id") in result.get("ops", []) and op.get("status") == "applied":
+                op["status"] = "proposed"
+        (run / "proposal.json").write_text(json.dumps(proposal, indent=2, ensure_ascii=False), encoding="utf-8")
+        state = project.load_state()
+        state["pending_run"] = run.name
+        project.save_state(state)
+        print("The proposal is waiting again: rem review")
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     return 0
 
 
@@ -203,8 +227,8 @@ def _pending(args):
                        f"and offer to show it with /rem:review. Do not apply anything without their say-so.")
     else:
         state = project.load_state()
-        new = dg.list_sessions(project.transcripts_dir, since_ts=state.get("last_session_mtime") or 0)
-        if not state.get("last_session_mtime"):
+        new = dg.list_sessions(project.transcripts_dir, since_ts=project.seen_mtime())
+        if not project.seen_mtime():
             new = [p for p in new if time.time() - p.stat().st_mtime < 14 * 86400]
         nudged = state.get("nudged_at", 0)
         if len(new) >= args.nudge_after and project.memory_dir.is_dir() and time.time() - nudged > 3 * 86400:

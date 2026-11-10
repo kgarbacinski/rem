@@ -36,7 +36,7 @@ def _new_snapshot_dir(project) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     for counter in range(1000):
-        path = root / (stamp if counter == 0 else f"{stamp}-{counter}")
+        path = root / f"{stamp}-{counter:03d}"
         try:
             path.mkdir()
             return path
@@ -142,12 +142,19 @@ def apply_ops(project, run_dir: Path, proposal: dict, ops) -> dict:
     finally:
         try:
             if index_changes:
+                if index_path.is_symlink():
+                    raise RuntimeError("MEMORY.md is a symbolic link; the index was not updated")
+                try:
+                    current = index_path.read_bytes().decode("utf-8") if index_path.exists() else ""
+                except UnicodeDecodeError:
+                    raise RuntimeError("MEMORY.md is not UTF-8 text; the index was not updated")
                 entry = backup(index_path)
                 memory_dir.mkdir(parents=True, exist_ok=True)
-                current = index_path.read_bytes().decode("utf-8", errors="replace") if index_path.exists() else ""
                 write_atomic(index_path, apply_index_changes(current, index_changes).encode("utf-8"))
                 written(entry, index_path)
-        finally:
+        except Exception as err:
+            error = error or err
+        if True:
             if manifest["files"]:
                 manifest["complete"] = error is None
                 _save_json(snap_dir / "manifest.json", manifest)
@@ -165,7 +172,7 @@ def list_snapshots(project):
     root = project.state_dir / "snapshots"
     out = []
     if root.is_dir():
-        for path in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        for path in sorted(root.iterdir(), key=lambda p: p.name, reverse=True):
             manifest = path / "manifest.json"
             if manifest.exists():
                 try:

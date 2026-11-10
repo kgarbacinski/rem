@@ -26,7 +26,9 @@ Each kind of operation is limited to the changes that kind is for. For example a
 - A session quote must appear inside one line of that session's digest (one message, one tool result). Matching ignores case, spacing, quote style and dash style, and nothing else. A quote joined with an ellipsis must have every part inside the same line, in order.
 - The speaker of the matched line is recorded. A promotion to CLAUDE.md or to a skill requires at least one quote of the user's own words, and evidence from two sessions (or one session plus an existing memory that already recorded the lesson).
 - A repository quote must appear in the named file inside the project directory. An empty quote with a path means "this path does not exist", and code confirms it.
-- A new memory needs a session quote. A fix needs a session quote or repository evidence.
+- A new memory needs a session quote. A fix needs a session quote or repository evidence; "this path no longer exists" counts only when the memory being fixed actually mentions that path. A merge must combine at least two existing memory files.
+- In a digest, every line after the first line of an event is indented, and tool names are reduced to plain characters. So nothing inside a tool result can pass for a new `USER:` line, and tool output cannot forge the user's words.
+- The second reader may trim a proposed file, and code accepts the trimmed version only if the frontmatter is unchanged and every remaining sentence was already in the proposal. It can delete; it cannot add or reword.
 
 Evidence that fails is removed. An operation without the evidence its kind requires is rejected before you see it, and listed under "filtered out" with the reason.
 
@@ -53,11 +55,13 @@ This reduces the risk. It does not remove it: a `new` memory can rest on tool ou
 - Before the first write, a snapshot folder and its manifest are created; the manifest is updated after every file. Files are replaced atomically.
 - An operation is skipped if any file it touches has changed since the dream read it.
 - `rem rollback` undoes the most recent apply, newest first. It restores exact bytes, removes files and folders that apply created, and refuses to overwrite a file you edited afterwards unless you pass `--force`.
+- A file is compared against what it looked like when the dream first read it, so an edit you or a live session made while the dream was running is not overwritten.
+- State (proposals, snapshots, the lock) is kept per memory directory, keyed by a hash of its full path. A proposal is applied to the project the dream looked at, whichever folder you run the command from.
 - One dream or apply per project at a time (a lock file, released if its process is gone).
 
 ## Model calls
 
-Each call runs `claude -p` as a fresh process with no hooks, no plugins, no MCP servers, no settings and no saved transcript. Analysis and the second read have no tools at all. The file review and consolidation steps have `Read`, `Glob` and `Grep` and nothing else, so they cannot write, run commands or reach the network.
+Each call runs `claude -p` as a fresh process with no hooks, no plugins, no MCP servers, no settings and no saved transcript. Analysis and the second read have no tools at all. The file review and consolidation steps have `Read`, `Glob` and `Grep` and nothing else, so they cannot write, run commands or reach the network. Those read tools are not confined to the project folder: a memory may point at a state file elsewhere on your disk, and the review step is allowed to read it. What such a step returns still passes the validator and the credential filter before you see it.
 
 ## Reporting a problem
 

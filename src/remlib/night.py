@@ -67,8 +67,7 @@ def _candidate(folder: Path, min_sessions: int, days: int):
         if not cwd or not Path(cwd).is_dir():
             return None
         project = Project(cwd, transcripts_dir=folder)
-        state = project.load_state()
-        since = state.get("last_session_mtime") or (time.time() - days * 86400)
+        since = project.seen_mtime() or (time.time() - days * 86400)
         new = dg.list_sessions(folder, since_ts=since)
         if len(new) >= min_sessions and not project.pending_run():
             return (len(new), project)

@@ -50,8 +50,9 @@ class Project:
         else:
             self.memory_dir = self._find_memory(base)
         # State follows the memory directory, so every folder of one repository shares it.
-        state_key = self.memory_dir.parent.name if self.memory_dir.name == "memory" else project_key(self.memory_dir)
-        self.state_dir = rem_home() / "projects" / (state_key or self.key)
+        # The hash of the full path keeps two projects with look-alike folders apart.
+        label = self.memory_dir.parent.name if self.memory_dir.name == "memory" else self.memory_dir.name
+        self.state_dir = rem_home() / "projects" / f"{label[-60:] or 'memory'}-{sha(str(self.memory_dir))[:10]}"
 
     def _find_memory(self, base: Path) -> Path:
         # Auto memory is keyed by the git repo, so a session in a subfolder shares it.
@@ -112,6 +113,11 @@ class Project:
     def save_state(self, state: dict) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         write_atomic(self.state_file(), json.dumps(state, indent=2).encode("utf-8"))
+
+    def seen_mtime(self) -> float:
+        """Newest session already reviewed, per transcripts folder (several can share one memory)."""
+        state = self.load_state()
+        return float((state.get("seen") or {}).get(str(self.transcripts_dir)) or 0)
 
     def pending_run(self):
         """Latest run with a proposal that still has undecided operations."""
@@ -199,6 +205,8 @@ def write_atomic(path, data: bytes) -> None:
     try:
         with open(tmp, "wb") as handle:
             handle.write(data)
+        if path.exists() and not path.is_symlink():
+            os.chmod(tmp, path.stat().st_mode & 0o7777)  # keep the file's permissions
         os.replace(tmp, path)
     finally:
         if tmp.exists():

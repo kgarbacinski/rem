@@ -17,14 +17,14 @@ from pathlib import Path
 from .redact import redact
 
 RAW_CAP = 20_000         # nothing longer than this is kept from a single event
-USER_CAP = 5000          # the user's own words are the most valuable signal
-REPORT_CAP = 3500        # the agent's last message before the user speaks again
+USER_CAP = 8000          # the user's own words are the most valuable signal
+REPORT_CAP = 6000        # the agent's last message before the user speaks again
 ASSISTANT_CAP = 500      # the agent's running commentary
 TOOL_INPUT_CAP = 220
 MEMORY_WRITE_CAP = 1500  # what a session saved to memory itself
 RESULT_CAP = 260
 ERROR_CAP = 600
-DIGEST_CAP = 80_000      # characters per session
+DIGEST_CAP = 160_000     # characters per session
 REPEAT_KEEP = 3          # occurrences kept of an event that repeats in a loop
 
 _REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
@@ -37,6 +37,7 @@ _BOILERPLATE = re.compile(
 _WS = re.compile(r"[ \t]+")
 # Tools whose output is plumbing: the call is worth a line, the result is not.
 _QUIET_TOOLS = re.compile(r"claude-in-chrome|Claude_Browser|computer|screenshot|TodoWrite|ToolSearch|TaskCreate|TaskUpdate", re.I)
+_SAME = "[the same instructions as in an earlier message, left out]"
 _VARIABLE = re.compile(r"\d+|[0-9a-f]{8,}")
 _MEMORY_PATH = re.compile(r"/memory/[^/]+\.md$|(?:^|/)CLAUDE\.md$")
 
@@ -48,8 +49,8 @@ def _s(value) -> str:
 
 def _clip(text: str, cap: int, head_share: float = 0.7) -> str:
     text = text.strip()
-    if len(text) <= cap:
-        return text
+    if len(text) <= cap + 40:
+        return text  # a cut that saves a few characters only hides the end of a sentence
     head = int(cap * head_share)
     tail = cap - head
     return f"{text[:head]} […{len(text) - cap} chars cut…] {text[-tail:]}"
@@ -61,8 +62,11 @@ def _clean(text) -> str:
     text = _BOILERPLATE.sub("", text)
     text = _WS.sub(" ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Redact before any cutting, so a cut can never leave half a token behind.
-    return redact(text.strip()[:RAW_CAP])
+    text = text.strip()
+    if len(text) > RAW_CAP:
+        # Cut at a word boundary, so a cut can never leave half a token behind.
+        text = text[:RAW_CAP].rsplit(None, 1)[0]
+    return redact(text)
 
 
 def _tool_input(name: str, inp) -> str:
@@ -170,7 +174,8 @@ def _parse_session(path: Path) -> dict:
                     if block.get("type") == "text":
                         add("ASSISTANT", _clean(block.get("text")), day)
                     elif block.get("type") == "tool_use":
-                        name = _s(block.get("name")) or "tool"
+                        # The name becomes part of a digest label: keep it short and plain.
+                        name = re.sub(r"[^\w.\-]", "_", _s(block.get("name")))[:60] or "tool"
                         tool_names[_s(block.get("id"))] = name
                         add(f"TOOL {name}", _tool_input(name, block.get("input")), day)
     return {**meta, "events": events}
@@ -197,8 +202,8 @@ def _collapse_repeats(events):
 
     seen = {}
     for i, event in enumerate(events):
-        if event["role"] == "USER" and len(event["text"]) > 200:
-            continue
+        if event["role"] == "USER":
+            continue  # the user's words are never collapsed
         seen.setdefault(signature(event), []).append(i)
     drop = set()
     for indexes in seen.values():
@@ -218,12 +223,33 @@ def _collapse_repeats(events):
     return out
 
 
+def _dedupe_boilerplate(events):
+    """A dispatcher repeats the same long instructions in every brief. Keep the first copy."""
+    seen = set()
+    for event in events:
+        if event["role"] != "USER":
+            continue
+        kept = []
+        for part in re.split(r"\n\s*\n", event["text"]):
+            key = _VARIABLE.sub("#", part.strip().lower())
+            if len(part) >= 200 and key in seen:
+                if not kept or kept[-1] != _SAME:
+                    kept.append(_SAME)
+                continue
+            if len(part) >= 200:
+                seen.add(key)
+            kept.append(part)
+        event["text"] = "\n\n".join(kept)
+
+
 def _cap(event, shrink: float = 1.0) -> str:
     role, text = event["role"], event["text"]
     if role == "USER":
-        return _clip(text, int(USER_CAP * shrink), 0.6)
+        return _clip(text, USER_CAP, 0.6)  # never shrunk further
     if role == "ASSISTANT":
-        return _clip(text, int((REPORT_CAP if event.get("report") else ASSISTANT_CAP) * shrink), 0.5)
+        if event.get("report"):
+            return _clip(text, int(REPORT_CAP * max(shrink, 0.5)), 0.5)
+        return _clip(text, int(ASSISTANT_CAP * shrink), 0.5)
     if role.startswith("ERROR"):
         return _clip(text, int(ERROR_CAP * shrink))
     if role.startswith("RESULT"):
@@ -241,13 +267,16 @@ def _fit(events, cap):
         return sum(len(t) + 20 for t in texts)
 
     for shrink in (1.0, 0.6, 0.35, 0.2):
-        texts = [_cap(e, shrink if e["role"] != "USER" else max(shrink, 0.6)) for e in events]
+        texts = [_cap(e, shrink) for e in events]
         if size(texts) <= cap:
             return [dict(e, text=t) for e, t in zip(events, texts)]
-    texts = [_cap(e, 0.2 if e["role"] != "USER" else 0.3) for e in events]
     total, middle, dropped = size(texts), len(events) / 2, set()
-    for prefix in ("RESULT", "TOOL", "NOTE", "ASSISTANT", "ERROR", "USER"):
-        for i in sorted((i for i, e in enumerate(events) if e["role"].startswith(prefix) and not e.get("report")),
+    # What the user typed is never dropped; the agent's closing reports go last.
+    order = [lambda e: e["role"].startswith("RESULT"), lambda e: e["role"].startswith("TOOL"),
+             lambda e: e["role"] == "NOTE", lambda e: e["role"] == "ASSISTANT" and not e.get("report"),
+             lambda e: e["role"].startswith("ERROR"), lambda e: e["role"] == "ASSISTANT"]
+    for wanted in order:
+        for i in sorted((i for i, e in enumerate(events) if i not in dropped and wanted(e)),
                         key=lambda i: abs(i - middle)):
             if total <= cap:
                 break
@@ -269,12 +298,14 @@ def _fit(events, cap):
 
 def render_digest(parsed: dict, cap: int = DIGEST_CAP) -> str:
     events = [dict(e) for e in parsed["events"]]
+    _dedupe_boilerplate(events)
     _mark_reports(events)
     events = _fit(_collapse_repeats(events), cap)
     date = (parsed.get("start") or "")[:10]
     last = (parsed.get("end") or "")[:10]
     span = date if last in ("", date) else f"{date} to {last}"
-    lines = [f"# session {parsed['session']} | {span} | {parsed.get('title') or 'untitled'}"]
+    title = " ".join(_s(parsed.get("title")).split()) or "untitled"
+    lines = [f"# session {parsed['session']} | {span} | {title}"]
     number, day = 0, date
     for event in events:
         if event.get("day") and event["day"] != day:
@@ -282,7 +313,10 @@ def render_digest(parsed: dict, cap: int = DIGEST_CAP) -> str:
             number += 1
             lines.append(f"[L{number}] DATE: {day}")
         number += 1
-        lines.append(f"[L{number}] {event['role']}: {event['text']}")
+        # Continuation lines are indented, so nothing inside an event can pass for a new
+        # "[L7] USER:" line: tool output cannot forge the user's words.
+        body = event["text"].replace("\n", "\n    ")
+        lines.append(f"[L{number}] {event['role']}: {body}")
     return redact("\n".join(lines)) + "\n"
 
 
@@ -331,7 +365,7 @@ def build_digests(paths, out_dir: Path, min_user_turns: int = 2):
     return made
 
 
-_LINE = re.compile(r"\A\[L(\d+)\] ([A-Z]+)(?: [^:]{0,80})?: (.*)\Z", re.S)
+_LINE = re.compile(r"\A\[L(\d+)\] ([A-Z]+)(?: [\w.\-]{1,60})?: (.*)\Z", re.S)
 _HEADER_DAY = re.compile(r"\| (\d{4}-\d{2}-\d{2})")
 _DASH = re.compile(r"[‐-―−]")
 

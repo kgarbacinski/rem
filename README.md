@@ -32,7 +32,7 @@ sessions (JSONL)  ─►  digests  ─►  analyze  ─►  review flagged files
    90 MB                225 KB      per session     one call per file        lessons          plain code     another model      you decide
 ```
 
-1. **Digest.** Each transcript is reduced to a numbered text record: your messages and the agent's closing reports nearly whole, tool output cut short, polling loops and browser plumbing collapsed, credentials masked. In one real project, 89.9 MB of transcripts became 225 KB.
+1. **Digest.** Each transcript is reduced to a numbered text record. Your messages are never dropped, the agent's closing reports are kept nearly whole, tool output is cut short, polling loops and repeated boilerplate are collapsed, credentials are masked. In one real project, 90 MB of transcripts became 321 KB.
 2. **Analyze.** A small model reads each session and reports two things: how the session bears on existing memories (confirmed, contradicted, outdated, ignored) and which lessons are worth keeping. Every finding must quote the transcript.
 3. **Review flagged files.** Each memory file that a session contradicted, or that the health scan flagged (dead paths, near duplicates, files that grew into logs), gets its own focused call that checks it against your repository and rewrites it or leaves it alone.
 4. **Consolidate.** One call turns the remaining lessons into operations.
@@ -140,7 +140,8 @@ A dream makes one small-model call per session (long sessions are read in parts)
 
 - **Transcript format.** Claude Code's session files are an internal format that changes between versions. `rem` reads them defensively through one module (`src/remlib/digest.py`), but a format change can degrade digests until that module is updated.
 - **Judgement varies.** Two dreams over the same sessions will not propose exactly the same operations. That is why the output is a proposal and not an edit.
-- **Long sessions lose detail.** A session of many megabytes is cut to about 80 KB. The user's messages are kept longest, but something in the middle of a very long session can be missed.
+- **Long sessions lose detail.** A session of many megabytes is cut to about 160 KB. Your own messages are always kept, but tool output and the agent's commentary from the middle of a very long session are dropped, so a fact that appeared only there can be missed.
+- **It is better at fixing than at noticing.** In an independent review on two real projects, most proposed fixes to existing memories were right as written, while a careful human reader found durable lessons that `rem` did not propose. Treat a dream as a strong first pass, not as a complete record of what was worth remembering.
 - **Redaction is best effort.** It catches common key formats, passwords in assignments and URLs, and private keys. It will not catch every secret, and digests of your sessions are stored locally under `~/.claude/rem/` (owner-only permissions; older ones are deleted automatically).
 - **Your data goes where Claude Code already sends it.** Model calls go through your `claude` CLI and account. `rem` adds no other network access.
 

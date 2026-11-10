@@ -23,6 +23,9 @@ Good candidates:
 - A fact about the project that cost several failed attempts to find out (the command that finally worked, the hidden precondition, the reason something is the way it is).
 - Where something lives outside the repository (an account, a dashboard, a document, a state file in another folder, a credential's location, never the credential itself).
 - A decision with its reason, when the reason is not written anywhere in the project.
+- A state file, queue or report folder outside the repository that the session is told to read or keep up to date.
+- The same tool failure hit again and again in the digest (a shell quoting error, a blocked action and the fallback that was accepted). The lesson is the cause and the way round it.
+- The user doubting the agent's claim ("are you sure?", "really?", "show me proof") and the agent then retracting or correcting it. Report it as a correction, and say in `statement` what should have been checked first.
 Leave out:
 - Anything a future session can read directly from the code, the git history, the README, the project's CLAUDE.md, or a project file the agent reads for that topic. If your quote is a tool result that reads a project file, the fact is already in the project; the lesson, if any, is "read that file first".
 - What was done in this session as a story. Progress logs, ticket numbers, counts and file lists of a finished task are not memory.
@@ -31,6 +34,8 @@ Leave out:
 - Something the agent proposed and the user never accepted. A user's "ok" to a single step is not a standing preference.
 - A discussion that ended without a decision, or a preference the user took back later in the same session. Only the final position counts; when sessions disagree, the later one counts.
 - Praise, small talk, and passing remarks with no sign they will matter again.
+
+The user's answer to a question the agent just asked about the current step ("go ahead with the hotfix", "not yet", "ok do it") decides that step only. It is not a standing permission or a standing ban; report it only if the user worded it as a rule.
 
 A short routine session yields zero to two lessons, and none is a correct answer. A session that runs for days, or in which the user corrected the agent many times, yields more: do not stop at two. When the same correction appears more than once, report it once and say in `why` how many times and on which lines.
 
