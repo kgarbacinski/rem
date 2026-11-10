@@ -123,12 +123,12 @@ There is a benchmark in [`evals/`](evals/): small projects with a planted situat
 
 | Suite | Cases × runs | Checks passed | Cases fully passed | Cost per dream |
 |---|---|---|---|---|
-| Development (easy + hard, 35 cases) | 35 × 3 | 543 / 545 (99.6%) | 103 / 105 | $0.03 |
-| Held-out (15 cases, run once after tuning stopped) | 15 × 3 | 262 / 269 (97.4%) | 42 / 45 | $0.03 |
+| Development (easy + hard, 35 cases) | 35 × 3 | 540 / 545 (99.1%) | 101 / 105 | $0.03 |
+| Held-out (15 cases) | 15 × 3 | 259 / 267 (97.0%) | 41 / 45 | $0.03 |
 
-By category on the held-out suite: correct 100%, consolidate 100%, promote 100%, safety 100%, capture 98%, restraint 88%. The weak spot is restraint: in 3 of 45 runs `rem` proposed a memory for something that was a one-off. That is the failure the review step exists for.
+By category on the held-out suite: correct 100%, consolidate 100%, capture 100%, safety 100%, promote 88%, restraint 88%. Two things went wrong there. In 2 of 45 runs `rem` proposed a memory for something that was a one-off, which is the failure the review step exists for. In 2 runs a promotion to CLAUDE.md was lost because two stages proposed it at once and the validator dropped both; that was a bug, it is fixed, and the table shows the numbers from before the fix.
 
-The hard and held-out cases were written by authors who were not shown the prompts. The development suites were used to tune the prompts, so treat that row as a development score; the held-out suite was run once, after tuning stopped, and nothing was changed in response to it. Results vary a little from run to run, because models do. Reproduce with `python3 evals/run.py --repeat 3` and `python3 evals/run.py --suite holdout --repeat 3`.
+The hard and held-out cases were written by authors who were not shown the prompts. The development suites were used to tune the prompts, so treat that row as a development score; the held-out suite was run after tuning stopped, and the prompts were not changed in response to it. Results vary a little from run to run, because models do. Reproduce with `python3 evals/run.py --repeat 3` and `python3 evals/run.py --suite holdout --repeat 3`.
 
 On two real projects (a mobile app and a personal knowledge base), a dream over one to two weeks of sessions took 2 to 3 minutes and cost $0.25 to $0.75 at API prices; on a subscription it uses your normal allowance.
 

@@ -261,7 +261,9 @@ def audit(project, memory_files, targets, metas, usage, log, workers=4):
         if result is None:
             continue
         reviewed[target["file"]] = target["signature"]
-        found = [op for op in (result.get("ops") or []) if isinstance(op, dict)][:1]
+        # A file review may fix, prune or merge. Promotions are the consolidation step's call.
+        found = [op for op in (result.get("ops") if isinstance(result.get("ops"), list) else [])
+                 if isinstance(op, dict) and op.get("kind") in ("fix", "prune", "merge")][:1]
         for op in found:
             op["source"] = "file review"
         ops.extend(found)
