@@ -113,7 +113,7 @@ $ rem status
 memory health 82/100  19 files, 56.0 KB, index 19/200 lines
   medium dead_reference       app-preview-video.md: mentions `docs/store/preview/`, which does not exist any more
   low    oversized            release-pending.md: 14153 bytes: long memories are read less carefully
-  low    dead_link            coderiv-infra.md: links to [[coderiv-deploy-pending]], and there is no such memory
+  low    dead_link            infra.md: links to [[deploy-pending]], and there is no such memory
 last dream: never; sessions since: 78
 ```
 
